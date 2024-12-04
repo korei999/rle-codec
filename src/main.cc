@@ -83,11 +83,9 @@ EncodedBuffDecode(EncodedBuff* s, IAllocator* pAlloc)
     return str;
 }
 
-static Opt<EncodedBuff>
+static EncodedBuff
 buffToEncoder(const file::Buff buff)
 {
-    if (buff.size == 0) return {};
-
     EncodedBuff eb {.realByteSize = *(u64*)buff.pData};
     VecBase<EncodedChar> vec {};
     vec.size = buff.size - sizeof(eb.realByteSize);
@@ -116,7 +114,7 @@ encode(IAllocator* pAlloc, const char* sPath, const char* sOutName)
 
     auto encoded = encode(pAlloc, (u8*)file.data.pData, file.data.size);
 
-    if (!saveToOpenFile(sOutName)) LOG_EXIT("File: '{}' exist\n", sOutName);
+    if (!saveToOpenFile(sOutName)) LOG_EXIT("File: '{}' exists\n", sOutName);
 
     FILE* pFile = fopen(sOutName, "wb");
     EncodedBuffWriteToFile(&encoded, pFile);
@@ -129,13 +127,10 @@ decode(IAllocator* pAlloc, const char* sPath, const char* sOutName)
     auto oBuff = file::loadToBuff(pAlloc, sPath);
     if (!oBuff) LOG_EXIT("quit...\n");
 
-    auto oEb = buffToEncoder(oBuff.data);
-    if (!oEb) LOG_EXIT("error happened\n");
-    auto& eb = oEb.data;
-
+    auto eb = buffToEncoder(oBuff.data);
     auto sOrig = EncodedBuffDecode(&eb, pAlloc);
 
-    if (!saveToOpenFile(sOutName)) LOG_EXIT("File: '{}' exist\n", sOutName);
+    if (!saveToOpenFile(sOutName)) LOG_EXIT("File: '{}' exists\n", sOutName);
     FILE* pFileOut = fopen(sOutName, "wb");
     fwrite(sOrig.pData, 1, sOrig.size, pFileOut);
 }
