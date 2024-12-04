@@ -20,14 +20,25 @@ struct EncodedBuff
     u64 realByteSize {};
 };
 
+static bool
+saveToOpenFile(const char* sPath)
+{
+    FILE* pf = fopen(sPath, "rb");
+
+    if (!pf) return true;
+    else
+    {
+        fclose(pf);
+        return false;
+    }
+}
+
 static EncodedBuff
 encode(IAllocator* pAlloc, u8* pBuff, u64 size)
 {
     decltype(EncodedChar::nRepeat) nConsecutive = 0;
 
-    u64 maxConsecutive = 0;
-
-    VecBase<EncodedChar> vec(pAlloc);
+    VecBase<EncodedChar> vec(pAlloc, size);
 
     for (u64 i = 0; i < size;)
     {
@@ -40,7 +51,6 @@ encode(IAllocator* pAlloc, u8* pBuff, u64 size)
             ++nConsecutive;
             ++i;
         }
-        if (nConsecutive > maxConsecutive) maxConsecutive = nConsecutive;
 
         VecPush(&vec, pAlloc, {nConsecutive, curr});
     }
@@ -54,6 +64,7 @@ encode(IAllocator* pAlloc, u8* pBuff, u64 size)
 static void
 EncodedBuffWriteToFile(EncodedBuff* s, FILE* pFile)
 {
+    fwrite(&s->realByteSize, sizeof(s->realByteSize), 1, pFile);
     fwrite(VecData(&s->vec), sizeof((s->vec)[0]), VecSize(&s->vec), pFile);
 }
 
@@ -72,31 +83,80 @@ EncodedBuffDecode(EncodedBuff* s, IAllocator* pAlloc)
     return str;
 }
 
+static Opt<EncodedBuff>
+buffToEncoder(const file::Buff buff)
+{
+    if (buff.size == 0) return {};
+
+    EncodedBuff eb {.realByteSize = *(u64*)buff.pData};
+    VecBase<EncodedChar> vec {};
+    vec.size = buff.size - sizeof(eb.realByteSize);
+
+    auto* pData = (EncodedChar*)(buff.pData + sizeof(eb.realByteSize));
+    vec.pData = pData;
+
+    eb.vec = vec;
+    return eb;
+}
+
+static void
+usage(char* argv0)
+{
+    LOG_EXIT(
+        "usage:\n"
+        "\t{} [-e(encode)|-d(decode)] <input file> <output file>\n", argv0
+    );
+}
+
+static void
+encode(IAllocator* pAlloc, const char* sPath, const char* sOutName)
+{
+    auto file = file::load(pAlloc, sPath);
+    if (!file) LOG_EXIT("quit...\n");
+
+    auto encoded = encode(pAlloc, (u8*)file.data.pData, file.data.size);
+
+    if (!saveToOpenFile(sOutName)) LOG_EXIT("File: '{}' exist\n", sOutName);
+
+    FILE* pFile = fopen(sOutName, "wb");
+    EncodedBuffWriteToFile(&encoded, pFile);
+    fclose(pFile);
+}
+
+static void
+decode(IAllocator* pAlloc, const char* sPath, const char* sOutName)
+{
+    auto oBuff = file::loadToBuff(pAlloc, sPath);
+    if (!oBuff) LOG_EXIT("quit...\n");
+
+    auto oEb = buffToEncoder(oBuff.data);
+    if (!oEb) LOG_EXIT("error happened\n");
+    auto& eb = oEb.data;
+
+    auto sOrig = EncodedBuffDecode(&eb, pAlloc);
+
+    if (!saveToOpenFile(sOutName)) LOG_EXIT("File: '{}' exist\n", sOutName);
+    FILE* pFileOut = fopen(sOutName, "wb");
+    fwrite(sOrig.pData, 1, sOrig.size, pFileOut);
+}
+
 int
 main(int argc, char** argv)
 {
-    if (argc < 3)
-        LOG_EXIT(
-            "usage:\n"
-            "\t{} <file to compress> <compressed filename>\n", argv[0]
-        );
+    if (argc < 4) usage(argv[0]);
 
     Arena arena(SIZE_1M);
     defer( freeAll(&arena) );
 
-    String sPath = argv[1];
-    auto file = file::load(&arena.super, sPath);
-    if (!file) LOG_EXIT("quit...\n");
-
-    auto encoded = encode(&arena.super, (u8*)file.data.pData, file.data.size);
-
-    FILE* pFile = fopen(argv[2], "wb");
-    EncodedBuffWriteToFile(&encoded, pFile);
-
-    String sComp = StringAlloc(&arena.super, argv[2]);
-    String sCompEnding = StringCat(&arena.super, sComp, ".kle");
-
-    String sOrig = EncodedBuffDecode(&encoded, &arena.super);
-    FILE* pOgFile = fopen(sCompEnding.pData, "wb");
-    fwrite(sOrig.pData, sizeof(sOrig[0]), sOrig.size, pOgFile);
+    if (argv[1] == String("-e"))
+    {
+        encode(&arena.super, argv[2], argv[3]);
+        return 0;
+    }
+    else if (argv[1] == String("-d"))
+    {
+        decode(&arena.super, argv[2], argv[3]);
+        return 0;
+    }
+    else usage(argv[0]);
 }

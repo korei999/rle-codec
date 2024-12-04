@@ -10,6 +10,12 @@ namespace adt
 namespace file
 {
 
+struct Buff
+{
+    u8* pData {};
+    u64 size {};
+};
+
 [[nodiscard]]
 inline Opt<String>
 load(IAllocator* pAlloc, String sPath)
@@ -33,6 +39,19 @@ load(IAllocator* pAlloc, String sPath)
     fread(ret.pData, 1, ret.size, pf);
 
     return {ret, true};
+}
+
+[[nodiscard]]
+inline Opt<Buff>
+loadToBuff(IAllocator* pAlloc, String sPath)
+{
+    auto ret = load(pAlloc, sPath);
+    if (ret)
+    {
+        Buff b {.pData = (u8*)ret.data.pData, .size = ret.data.size};
+        return b;
+    }
+    else return {};
 }
 
 [[nodiscard]]
